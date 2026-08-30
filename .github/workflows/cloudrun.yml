@@ -1,0 +1,58 @@
+name: One-shot Cloud MCP runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: "Repository to clone (owner/name)"
+        required: true
+        default: "abhigyanpatwari/GitNexus"
+      ref:
+        description: "Branch, tag, or commit"
+        required: false
+        default: "main"
+      minutes:
+        description: "Maximum lifetime (1-350 minutes)"
+        required: false
+        default: "120"
+
+permissions:
+  contents: read
+
+jobs:
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Checkout runner
+        uses: actions/checkout@v4
+
+      - name: Prepare workspace
+        env:
+          TARGET_REPO: ${{ inputs.target_repo }}
+          TARGET_REF: ${{ inputs.ref }}
+        run: |
+          git clone --depth 1 --branch "$TARGET_REF" "https://github.com/$TARGET_REPO.git" /workspace
+          rm -rf /workspace/.git 2>/dev/null || true
+
+      - name: Start authenticated MCP and tunnel
+        env:
+          MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          test -n "$MCP_TOKEN" || { echo 'Set the MCP_TOKEN repository secret first.'; exit 1; }
+          python3 runner.py >/tmp/cloudrun.log 2>&1 &
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+          chmod +x /tmp/cloudflared
+          /tmp/cloudflared tunnel --url http://127.0.0.1:8765 --no-autoupdate >/tmp/tunnel.log 2>&1 &
+          for i in $(seq 1 30); do grep -o 'https://[^ ]*trycloudflare.com' /tmp/tunnel.log && break || sleep 1; done
+          URL=$(grep -o 'https://[^ ]*trycloudflare.com' /tmp/tunnel.log | head -1)
+          test -n "$URL" || { cat /tmp/tunnel.log; exit 1; }
+          {
+            echo '## Temporary MCP endpoint'
+            echo
+            echo "**URL:** \\`$URL/mcp\\`"
+            echo
+            echo 'Use the MCP_TOKEN repository secret as the Bearer token. This runner expires automatically.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          sleep "$(( ${MINUTES:-120} * 60 ))"
