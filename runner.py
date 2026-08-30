@@ -18,6 +18,34 @@ def result(text, error=False):
     return {"content": [{"type": "text", "text": text}], "isError": error}
 
 def call_tool(name, args):
+    if name == "list_files":
+        base = safe_path(args.get("path", "."))
+        limit = min(max(int(args.get("limit", 200)), 1), 1000)
+        files = []
+        for p in base.rglob("*"):
+            if p.is_file() and ".git" not in p.parts:
+                files.append(str(p.relative_to(ROOT)))
+                if len(files) >= limit:
+                    break
+        return result("\n".join(files) or "(no files)")
+    if name == "search_files":
+        import re
+        pattern = args.get("pattern")
+        if not isinstance(pattern, str) or not pattern:
+            raise ValueError("search_files requires a non-empty pattern")
+        base = safe_path(args.get("path", "."))
+        rx = re.compile(pattern)
+        matches, limit = [], min(max(int(args.get("limit", 100)), 1), 500)
+        for p in base.rglob("*"):
+            if not p.is_file() or ".git" in p.parts:
+                continue
+            try: lines = p.read_text(errors="ignore").splitlines()
+            except OSError: continue
+            for number, line in enumerate(lines, 1):
+                if rx.search(line):
+                    matches.append(f"{p.relative_to(ROOT)}:{number}:{line[:500]}")
+                    if len(matches) >= limit: return result("\n".join(matches))
+        return result("\n".join(matches) or "(no matches)")
     if name == "exec":
         argv = args.get("argv")
         if not isinstance(argv, list) or not argv or not all(isinstance(x, str) for x in argv):
@@ -38,6 +66,8 @@ def call_tool(name, args):
     raise ValueError(f"unknown tool: {name}")
 
 TOOLS = [
+    {"name": "list_files", "description": "List workspace files.", "inputSchema": {"type":"object", "properties":{"path":{"type":"string"},"limit":{"type":"integer"}}}},
+    {"name": "search_files", "description": "Search text files with a regular expression.", "inputSchema": {"type":"object", "properties":{"pattern":{"type":"string"},"path":{"type":"string"},"limit":{"type":"integer"}}, "required":["pattern"]}},
     {"name": "exec", "description": "Run a command without a shell inside the workspace.", "inputSchema": {"type":"object", "properties":{"argv":{"type":"array","items":{"type":"string"}},"cwd":{"type":"string"},"timeout":{"type":"integer"}}, "required":["argv"]}},
     {"name": "read_file", "description": "Read a workspace file.", "inputSchema": {"type":"object", "properties":{"path":{"type":"string"}}, "required":["path"]}},
     {"name": "write_file", "description": "Write a workspace file.", "inputSchema": {"type":"object", "properties":{"path":{"type":"string"},"content":{"type":"string"}}, "required":["path","content"]}},
