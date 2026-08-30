@@ -13,7 +13,7 @@ A manually dispatched GitHub Actions job:
 
 Create an Actions repository secret named `MCP_TOKEN` with a long random value. Never put this token in workflow inputs or source files.
 
-Run **Actions → One-shot Cloud MCP runner → Run workflow**. Choose the repository/ref and lifetime. The job summary contains the temporary `/mcp` URL; send the URL and token to the agent through a secure channel.
+Run **Actions → One-shot Cloud MCP runner → Run workflow**. Choose the repository/ref and lifetime. The workflow automatically updates [`CURRENT_ENDPOINT.md`](CURRENT_ENDPOINT.md) with the latest temporary `/mcp` URL. The Bearer token remains only in the `MCP_TOKEN` secret.
 
 Tools are intentionally limited to:
 
