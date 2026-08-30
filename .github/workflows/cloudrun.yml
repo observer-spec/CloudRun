@@ -53,7 +53,7 @@ jobs:
           {
             echo '## Temporary MCP endpoint'
             echo
-            echo "**URL:** \\`$URL/mcp\\`"
+            printf '**URL:** `%s/mcp`\n' "$URL"
             echo
             echo 'Use the MCP_TOKEN repository secret as the Bearer token. This runner expires automatically.'
           } >> "$GITHUB_STEP_SUMMARY"
