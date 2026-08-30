@@ -1,5 +1,9 @@
 name: One-shot Cloud MCP runner
 
+concurrency:
+  group: cloudrun-singleton
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
     inputs:
