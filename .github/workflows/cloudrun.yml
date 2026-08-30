@@ -31,14 +31,16 @@ jobs:
         env:
           TARGET_REPO: ${{ inputs.target_repo }}
           TARGET_REF: ${{ inputs.ref }}
+          WORKSPACE: ${{ runner.temp }}/workspace
         run: |
-          git clone --depth 1 --branch "$TARGET_REF" "https://github.com/$TARGET_REPO.git" /workspace
-          rm -rf /workspace/.git 2>/dev/null || true
+          git clone --depth 1 --branch "$TARGET_REF" "https://github.com/$TARGET_REPO.git" "$WORKSPACE"
+          rm -rf "$WORKSPACE/.git" 2>/dev/null || true
 
       - name: Start authenticated MCP and tunnel
         env:
           MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
           MINUTES: ${{ inputs.minutes }}
+          WORKSPACE: ${{ runner.temp }}/workspace
         run: |
           test -n "$MCP_TOKEN" || { echo 'Set the MCP_TOKEN repository secret first.'; exit 1; }
           python3 runner.py >/tmp/cloudrun.log 2>&1 &
