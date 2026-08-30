@@ -21,7 +21,7 @@ on:
         default: "120"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   runner:
@@ -30,7 +30,6 @@ jobs:
     steps:
       - name: Checkout runner
         uses: actions/checkout@v4
-
       - name: Prepare workspace
         env:
           TARGET_REPO: ${{ inputs.target_repo }}
@@ -39,26 +38,27 @@ jobs:
         run: |
           git clone --depth 1 --branch "$TARGET_REF" "https://github.com/$TARGET_REPO.git" "$WORKSPACE"
           rm -rf "$WORKSPACE/.git" 2>/dev/null || true
-
       - name: Start authenticated MCP and tunnel
         env:
           MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
           MINUTES: ${{ inputs.minutes }}
           WORKSPACE: ${{ runner.temp }}/workspace
+          GH_TOKEN: ${{ github.token }}
         run: |
-          test -n "$MCP_TOKEN" || { echo 'Set the MCP_TOKEN repository secret first.'; exit 1; }
+          test -n "$MCP_TOKEN" || { echo "Set the MCP_TOKEN repository secret first."; exit 1; }
           python3 runner.py >/tmp/cloudrun.log 2>&1 &
           curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
           chmod +x /tmp/cloudflared
           /tmp/cloudflared tunnel --url http://127.0.0.1:8765 --no-autoupdate >/tmp/tunnel.log 2>&1 &
-          for i in $(seq 1 30); do grep -o 'https://[^ ]*trycloudflare.com' /tmp/tunnel.log && break || sleep 1; done
-          URL=$(grep -o 'https://[^ ]*trycloudflare.com' /tmp/tunnel.log | head -1)
+          for i in $(seq 1 30); do grep -o "https://[^ ]*trycloudflare.com" /tmp/tunnel.log && break || sleep 1; done
+          URL=$(grep -o "https://[^ ]*trycloudflare.com" /tmp/tunnel.log | head -1)
           test -n "$URL" || { cat /tmp/tunnel.log; exit 1; }
-          {
-            echo '## Temporary MCP endpoint'
-            echo
-            printf '**URL:** `%s/mcp`\n' "$URL"
-            echo
-            echo 'Use the MCP_TOKEN repository secret as the Bearer token. This runner expires automatically.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          printf "# Active CloudRun endpoint\n\n**URL:** %s/mcp\n\nThis is temporary and expires with the workflow. The Bearer token is the repository MCP_TOKEN secret.\n" "$URL" > /tmp/current-endpoint.md
+          SHA=$(gh api repos/${{ github.repository }}/contents/CURRENT_ENDPOINT.md --jq .sha 2>/dev/null || true)
+          if [ -n "$SHA" ]; then
+            gh api --method PUT repos/${{ github.repository }}/contents/CURRENT_ENDPOINT.md -f message="chore: update active CloudRun endpoint" -f content="$(base64 -w0 /tmp/current-endpoint.md)" -f sha="$SHA" >/dev/null
+          else
+            gh api --method PUT repos/${{ github.repository }}/contents/CURRENT_ENDPOINT.md -f message="chore: publish active CloudRun endpoint" -f content="$(base64 -w0 /tmp/current-endpoint.md)" >/dev/null
+          fi
+          { echo "## Temporary MCP endpoint"; echo; printf "**URL:** %s/mcp\n" "$URL"; echo; echo "Use the MCP_TOKEN repository secret as the Bearer token. This runner expires automatically."; } >> "$GITHUB_STEP_SUMMARY"
           sleep "$(( ${MINUTES:-120} * 60 ))"
